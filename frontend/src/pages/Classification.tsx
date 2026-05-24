@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { classificationApi } from '../services/api'
@@ -17,6 +17,7 @@ import ComplianceChecklist, {
   ChecklistItem,
 } from '../components/ComplianceChecklist'
 import CopyButton from '../components/CopyButton'
+import Skeleton from '../components/Skeleton'
 
 type Tab = 'questionnaire' | 'results' | 'requirements'
 type RiskLevel = 'minimal' | 'limited' | 'high' | 'unacceptable'
@@ -191,6 +192,73 @@ export default function Classification() {
     },
   })
 
+  // Derive a live preliminary risk level from formData so the panel
+  // updates in real-time as checkboxes are ticked, before the API call.
+  const liveRiskLevel = useMemo((): string | null => {
+    const {
+      law_enforcement,
+      border_control,
+      justice_system,
+      hr_recruitment_screening,
+      hr_promotion_termination,
+      credit_worthiness,
+      insurance_risk_assessment,
+      affects_fundamental_rights,
+      makes_automated_decisions,
+      is_safety_component,
+      uses_biometric_data,
+      biometric_categorization,
+      emotion_recognition,
+      interacts_with_humans,
+      generates_synthetic_content,
+    } = formData
+
+    if (law_enforcement && uses_biometric_data && biometric_categorization) {
+      return 'unacceptable'
+    }
+
+    const highRiskTriggers = [
+      hr_recruitment_screening,
+      hr_promotion_termination,
+      credit_worthiness,
+      insurance_risk_assessment,
+      law_enforcement,
+      border_control,
+      justice_system,
+      affects_fundamental_rights && makes_automated_decisions,
+      is_safety_component,
+    ]
+
+    if (highRiskTriggers.some(Boolean)) {
+      return 'high'
+    }
+
+    if (interacts_with_humans || generates_synthetic_content || emotion_recognition) {
+      return 'limited'
+    }
+
+    return 'minimal'
+  }, [formData])
+
+  // Only treat explicitly opt-in fields as "interaction" - fields that default
+  // to true would fire the preview immediately on page load before the user does anything.
+  const hasInteracted = useMemo(() => {
+    return (
+      formData.hr_recruitment_screening ||
+      formData.hr_promotion_termination ||
+      formData.credit_worthiness ||
+      formData.insurance_risk_assessment ||
+      formData.law_enforcement ||
+      formData.border_control ||
+      formData.justice_system ||
+      formData.is_safety_component ||
+      formData.uses_biometric_data ||
+      formData.biometric_categorization ||
+      formData.emotion_recognition ||
+      formData.generates_synthetic_content
+    )
+  }, [formData])
+
   const getRiskIcon = (level: string) => {
     switch (level) {
       case 'unacceptable':
@@ -216,22 +284,6 @@ export default function Classification() {
         return 'bg-green-50 border-green-200 text-green-800'
     }
   }
-
-  const getRiskBadgeColor = (level: string) => {
-    switch (level) {
-      case 'unacceptable':
-        return 'bg-red-100 text-red-800 border-red-200'
-      case 'high':
-        return 'bg-orange-100 text-orange-800 border-orange-200'
-      case 'limited':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      default:
-        return 'bg-green-100 text-green-800 border-green-200'
-    }
-  }
-
-  const getReasoning = (classificationResult: ClassificationResult) =>
-    classificationResult.reasoning || classificationResult.reasons.join('\n')
 
   const getRequirementContent = (level: string) =>
     requirementContent[level] || requirementContent.minimal
@@ -277,11 +329,6 @@ export default function Classification() {
         {locked && <Lock className="w-3.5 h-3.5" />}
       </button>
     )
-  }
-
-  const resetClassification = () => {
-    setResult(null)
-    setActiveTab('questionnaire')
   }
 
   const renderQuestionnaire = () => (
@@ -645,33 +692,80 @@ export default function Classification() {
   )
 
   const renderResults = () => {
-    if (!result) {
-      return null
+    if (classifyMutation.isPending && !result) {
+      return (
+        <div className="space-y-4">
+          <Skeleton variant="card" count={1} />
+        </div>
+      )
     }
 
-    return (
-      <div className="space-y-6">
-        <div className={`rounded-xl border p-6 ${getRiskColor(result.risk_level)}`}>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              {getRiskIcon(result.risk_level)}
-              <div>
-                <h2 className="text-xl font-bold text-gray-900 capitalize">
-                  {result.risk_level} Risk
-                </h2>
-                <p className="text-sm text-gray-600">
-                  Confidence: {Math.round(result.confidence * 100)}%
-                </p>
+    if (result) {
+      return (
+        <div className={`rounded-2xl border-0 p-8 glass animate-in overflow-hidden relative group`}>
+          <div
+            className={`absolute -right-20 -top-20 w-64 h-64 rounded-full blur-3xl opacity-20 transition-colors duration-500 ${
+              result.risk_level === 'unacceptable'
+                ? 'bg-red-500'
+                : result.risk_level === 'high'
+                ? 'bg-orange-500'
+                : result.risk_level === 'limited'
+                ? 'bg-yellow-500'
+                : 'bg-green-500'
+            }`}
+          />
+
+          <div className="relative z-10">
+            <div className="flex items-start justify-between gap-4 mb-8">
+              <div className="flex items-center gap-5">
+                <div
+                  className={`p-4 rounded-2xl shadow-inner ${
+                    result.risk_level === 'unacceptable'
+                      ? 'bg-red-100'
+                      : result.risk_level === 'high'
+                      ? 'bg-orange-100'
+                      : result.risk_level === 'limited'
+                      ? 'bg-yellow-100'
+                      : 'bg-green-100'
+                  }`}
+                >
+                  {getRiskIcon(result.risk_level)}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-2xl font-black text-gray-900 capitalize tracking-tight">
+                      {result.risk_level} Risk
+                    </h2>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        result.risk_level === 'unacceptable'
+                          ? 'bg-red-200 text-red-800'
+                          : result.risk_level === 'high'
+                          ? 'bg-orange-200 text-orange-800'
+                          : result.risk_level === 'limited'
+                          ? 'bg-yellow-200 text-yellow-800'
+                          : 'bg-green-200 text-green-800'
+                      }`}
+                    >
+                      AI Act Classified
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="w-32 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-1000 ease-out ${
+                          result.confidence > 0.8 ? 'bg-green-500' : 'bg-yellow-500'
+                        }`}
+                        style={{ width: `${result.confidence * 100}%` }}
+                      />
+                    </div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase">
+                      {Math.round(result.confidence * 100)}% Confidence
+                    </p>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <span
-                className={`inline-flex w-fit items-center rounded-full border px-5 py-2 text-lg font-semibold capitalize ${getRiskBadgeColor(
-                  result.risk_level
-                )}`}
-              >
-                {result.risk_level}
-              </span>
+
               <CopyButton
                 text={buildClassificationReport(result)}
                 label="Copy Report"
@@ -679,23 +773,164 @@ export default function Classification() {
                 className="shrink-0"
               />
             </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-8">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span className="w-1.5 h-4 bg-primary-500 rounded-full"></span>
+                    Why this classification?
+                  </h3>
+                  <ul className="space-y-3">
+                    {result.reasons.map((reason, i) => (
+                      <li key={i} className="text-sm text-gray-600 flex items-start gap-3 group/item">
+                        <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary-400 group-hover/item:scale-125 transition-transform" />
+                        <span className="leading-relaxed">{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span className="w-1.5 h-4 bg-primary-500 rounded-full"></span>
+                    Legal Requirements
+                  </h3>
+                  <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100">
+                    <ul className="space-y-3">
+                      {result.requirements.map((req, i) => (
+                        <li key={i} className="text-sm text-gray-700 flex items-start gap-3">
+                          <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                          <span className="font-medium">{req}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-8">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span className="w-1.5 h-4 bg-primary-500 rounded-full"></span>
+                    Action Plan
+                  </h3>
+                  <div className="space-y-4">
+                    {result.next_steps.map((step, i) => (
+                      <div key={i} className="flex gap-4 group/step">
+                        <div className="flex flex-col items-center">
+                          <div className="w-8 h-8 rounded-full bg-white border-2 border-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold shadow-sm group-hover/step:border-primary-500 group-hover/step:bg-primary-500 group-hover/step:text-white transition-all">
+                            {i + 1}
+                          </div>
+                          {i < result.next_steps.length - 1 && (
+                            <div className="w-0.5 h-full bg-primary-50 my-1" />
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 pt-1.5 leading-relaxed">{step}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {result.risk_level !== 'unacceptable' && (
+              <div className="mt-10 pt-8 border-t border-gray-100">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-bold text-gray-900">Interactive Compliance Checklist</h3>
+                  <span className="text-xs font-medium text-gray-400 bg-gray-50 px-2 py-1 rounded">
+                    {CHECKLIST_ITEMS[result.risk_level]?.length || 0} ITEMS REQUIRED
+                  </span>
+                </div>
+
+                {systemId ? (
+                  <ComplianceChecklist
+                    systemId={Number(systemId)}
+                    riskLevel={result.risk_level as 'minimal' | 'limited' | 'high' | 'unacceptable'}
+                    items={CHECKLIST_ITEMS[result.risk_level] || []}
+                  />
+                ) : (
+                  <p className="text-sm text-gray-400 italic">
+                    Save this AI system first to track checklist progress.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
+      )
+    }
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="font-medium text-gray-900 mb-2">Reasoning</h3>
-          <p className="whitespace-pre-line text-sm text-gray-600">
-            {getReasoning(result)}
+    if (hasInteracted && liveRiskLevel) {
+      return (
+        <div className="bg-white rounded-2xl border border-gray-100 p-8 shadow-sm animate-in">
+          <div className="flex items-center gap-3 mb-6">
+            {getRiskIcon(liveRiskLevel)}
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-black text-gray-900 capitalize tracking-tight">
+                  {liveRiskLevel} Risk
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-gray-100 text-gray-500">
+                  Preview
+                </span>
+              </div>
+              <p className="text-sm text-gray-400 mt-0.5">
+                Submit the form for full analysis and compliance roadmap
+              </p>
+            </div>
+          </div>
+
+          <div
+            className={`rounded-xl p-4 mb-6 ${
+              liveRiskLevel === 'unacceptable'
+                ? 'bg-red-50 border border-red-100'
+                : liveRiskLevel === 'high'
+                ? 'bg-orange-50 border border-orange-100'
+                : liveRiskLevel === 'limited'
+                ? 'bg-yellow-50 border border-yellow-100'
+                : 'bg-green-50 border border-green-100'
+            }`}
+          >
+            <p
+              className={`text-sm font-medium ${
+                liveRiskLevel === 'unacceptable'
+                  ? 'text-red-800'
+                  : liveRiskLevel === 'high'
+                  ? 'text-orange-800'
+                  : liveRiskLevel === 'limited'
+                  ? 'text-yellow-800'
+                  : 'text-green-800'
+              }`}
+            >
+              {liveRiskLevel === 'unacceptable' && 'This system may be prohibited under EU AI Act Article 5. Review immediately.'}
+              {liveRiskLevel === 'high' && 'High-risk systems require technical documentation, conformity assessment, and human oversight (Annex III).' }
+              {liveRiskLevel === 'limited' && 'Limited-risk systems must meet transparency obligations under Article 52.'}
+              {liveRiskLevel === 'minimal' && 'Minimal risk - no mandatory obligations, but voluntary best practices are recommended.'}
+            </p>
+          </div>
+
+          <p className="text-xs text-gray-400 text-center">
+            This is a real-time estimate based on your selections. Click <strong>Classify Risk Level</strong> for the full AI Act analysis.
           </p>
         </div>
+      )
+    }
 
-        <button
-          type="button"
-          onClick={resetClassification}
-          className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-        >
-          Classify Again
-        </button>
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center shadow-sm">
+        <div className="w-20 h-20 bg-gray-50 rounded-3xl flex items-center justify-center mx-auto mb-6">
+          <AlertTriangle className="w-10 h-10 text-gray-300" />
+        </div>
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Ready for Classification</h3>
+        <p className="text-gray-500 max-w-sm mx-auto leading-relaxed">
+          Complete the questionnaire to generate your AI Act risk profile and compliance roadmap.
+        </p>
+        <div className="mt-8 flex justify-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-primary-200 animate-bounce" style={{ animationDelay: '0ms' }} />
+          <div className="w-2 h-2 rounded-full bg-primary-200 animate-bounce" style={{ animationDelay: '150ms' }} />
+          <div className="w-2 h-2 rounded-full bg-primary-200 animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
       </div>
     )
   }
