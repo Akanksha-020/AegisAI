@@ -59,7 +59,7 @@ export default function Dashboard() {
       {/* Stats */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Skeleton variant="stat" count={4} />
+          <Skeleton variant="stat" count={4} className="contents" />
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
