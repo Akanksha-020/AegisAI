@@ -17,6 +17,7 @@ import ComplianceChecklist, {
   ChecklistItem,
 } from '../components/ComplianceChecklist'
 import CopyButton from '../components/CopyButton'
+import Skeleton from '../components/Skeleton'
 
 type Tab = 'questionnaire' | 'results' | 'requirements'
 type RiskLevel = 'minimal' | 'limited' | 'high' | 'unacceptable'
@@ -184,6 +185,9 @@ export default function Classification() {
         return classificationApi.classifyAndSave(parseInt(systemId), formData)
       }
       return classificationApi.classify(formData)
+    },
+    onMutate: () => {
+      setActiveTab('results')
     },
     onSuccess: (data) => {
       setResult(data)
@@ -645,6 +649,14 @@ export default function Classification() {
   )
 
   const renderResults = () => {
+    if (classifyMutation.isPending && !result) {
+      return (
+        <div className="space-y-4">
+          <Skeleton variant="card" count={1} />
+        </div>
+      )
+    }
+
     if (!result) {
       return null
     }
