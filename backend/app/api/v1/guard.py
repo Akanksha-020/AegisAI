@@ -72,6 +72,7 @@ class BulkScanResponse(BaseModel):
 
 VALID_SANITIZATION_LEVELS = {"low", "medium", "high"}
 user_guard_configs: dict[int, dict[str, float | str]] = {}
+_scan_attempts_by_user = guard_scan_rate_limiter._local_attempts_by_key
 
 
 def _infer_detection_type(regex_flag: bool, intent: str) -> str:
@@ -421,10 +422,13 @@ def get_guard_stats(
         if date_key not in daily_buckets:
             daily_buckets[date_key] = {
                 "date": date_key,
+                "count": 0,
                 "allow": 0,
                 "sanitize": 0,
                 "block": 0,
             }
+
+        daily_buckets[date_key]["count"] += count
 
         if decision in {"allow", "sanitize", "block"}:
             daily_buckets[date_key][decision] = count
