@@ -1,5 +1,3 @@
-import React from 'react'
-
 type Variant = 'stat' | 'card' | 'list' | 'chat'
 
 interface Props {
