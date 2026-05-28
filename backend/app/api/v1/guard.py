@@ -60,6 +60,8 @@ class BulkScanRequest(BaseModel):
     prompts: list[str]
 
     def validate_prompts(self) -> None:
+        if not self.prompts:
+            raise ValueError("At least one prompt is required per batch request.")
         if len(self.prompts) > 50:
             raise ValueError("Maximum 50 prompts allowed per batch request.")
 
@@ -233,12 +235,6 @@ def guard_health():
         A status payload describing the Guard module availability.
     """
     return {"module": "llm_guard", "status": "available"}
-
-
-class GuardConfigRequest(BaseModel):
-    sanitization_level: str
-    malicious_threshold: float
-    suspicious_threshold: float
 
 @router.get("/info", tags=["LLM Guard"])
 def guard_info():
